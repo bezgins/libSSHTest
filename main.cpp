@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <boost/thread/thread.hpp>
 
 #ifndef KEYS_FOLDER
 #ifdef _WIN32
@@ -24,49 +25,22 @@ static int auth_password(const char *user, const char *password){
     return 1; // authenticated
 }
 
-using namespace std;
 
-int main()
+void thread_func(ssh_session session)
 {
-    ssh_session session;
-    ssh_bind sshbind;
     ssh_message message;
     ssh_channel chan=0;
     char buf[2048];
     int auth=0;
     int sftp=0;
     int i;
-    int r;
 
-    sshbind=ssh_bind_new();
-    session=ssh_new();
-
-    //ssh_session_set_blocking(session, )
-
-    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_DSAKEY,       KEYS_FOLDER "ssh_host_dsa_key");
-    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_RSAKEY,       KEYS_FOLDER "ssh_host_rsa_key");
-    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDPORT_STR, "2222");
-    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_LOG_VERBOSITY_STR, "3");
-
-    if(ssh_bind_listen(sshbind)<0)
-    {
-        printf("Error listening to socket: %s\n",ssh_get_error(sshbind));
-        return 1;
-    }
-    printf("listened\n");
-
-    r=ssh_bind_accept(sshbind,session);
-    if(r==SSH_ERROR)
-    {
-      printf("error accepting a connection : %s\n",ssh_get_error(sshbind));
-      return 1;
-    }
-    printf("Accepted\n");
+    printf("Thread!");
 
     if (ssh_handle_key_exchange(session))
     {
         printf("ssh_handle_key_exchange: %s\n", ssh_get_error(session));
-        return 1;
+        return;
     }
 
     do
@@ -107,7 +81,7 @@ int main()
     {
         printf("auth error: %s\n",ssh_get_error(session));
         ssh_disconnect(session);
-        return 1;
+        return;
     }
 
     do
@@ -134,7 +108,7 @@ int main()
     {
         printf("error : %s\n",ssh_get_error(session));
         ssh_finalize();
-        return 1;
+        return;
     }
     do
     {
@@ -157,7 +131,7 @@ int main()
     if(!sftp)
     {
         printf("error : %s\n",ssh_get_error(session));
-        return 1;
+        return;
     }
 
     printf("it works !\n");
@@ -171,7 +145,54 @@ int main()
     } while (i>0);
 
     ssh_disconnect(session);
+
+
+}
+
+using namespace std;
+
+int main()
+{
+    ssh_bind sshbind;
+    ssh_session session;
+    int r;
+
+    sshbind=ssh_bind_new();
+
+    //ssh_session_set_blocking(session, )
+
+    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_DSAKEY,       KEYS_FOLDER "ssh_host_dsa_key");
+    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_RSAKEY,       KEYS_FOLDER "ssh_host_rsa_key");
+    ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_BINDPORT_STR, "2222");
+    //ssh_bind_options_set(sshbind, SSH_BIND_OPTIONS_LOG_VERBOSITY_STR, "3");
+
+    if(ssh_bind_listen(sshbind)<0)
+    {
+        printf("Error listening to socket: %s\n",ssh_get_error(sshbind));
+        return 1;
+    }
+    printf("listened\n");
+
+    while(1)
+    {
+        session=ssh_new();
+
+        r=ssh_bind_accept(sshbind, session);
+        if(r==SSH_ERROR)
+        {
+          printf("error accepting a connection : %s\n",ssh_get_error(sshbind));
+          return 1;
+        }
+
+        printf("Accepted\n");
+
+        boost::thread t(thread_func, session);
+
+        //t.join();
+    }
+
     ssh_bind_free(sshbind);
+
     ssh_finalize();
 
     return 0;
